@@ -52,3 +52,16 @@ class Record(NewRecord):
     domain: str
     ttl: int
     can_edit: bool
+
+
+class TokenRequest(BaseModel):
+    """Token request model."""
+
+    namespace: str
+
+    @validator("namespace")
+    def validate_namespace(cls, v: str) -> str:  # noqa: N805
+        """Validate namespace."""
+        if not v == "*":
+            validate_domain(v)
+        return v

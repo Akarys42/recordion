@@ -2,6 +2,7 @@ import os
 import re
 
 DNS_DATABASE_URL = os.getenv("DNS_DATABASE_URL")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 SOA_MNAME = os.getenv("SOA_MNAME", "ns.localhost.local")  # Primary nameserver
 SOA_RNAME = os.getenv("SOA_RNAME", "admin.localhost.local")  # Email of the administrator

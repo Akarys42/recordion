@@ -1,13 +1,17 @@
 import asyncpg
 from asyncpg import Connection, UniqueViolationError
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from jose import jwt
+from starlette.requests import Request
 from starlette.responses import Response
 
+from recordion.auth import JWTBearer, check_auth
 from recordion.constants import (
     ALLOWED_RECORDS,
     DEFAULT_TTL,
     DNS_DATABASE_URL,
     LOCKED_RECORD_TYPES,
+    SECRET_KEY,
     SOA_EXPIRE,
     SOA_MNAME,
     SOA_REFRESH,
@@ -15,11 +19,13 @@ from recordion.constants import (
     SOA_RNAME,
     SOA_TTL,
 )
-from recordion.models import Domain, NewDomain, NewRecord, Record, UpdateRecord
+from recordion.models import Domain, NewDomain, NewRecord, Record, TokenRequest, UpdateRecord
 from recordion.utils import bump_serial
 
 app = FastAPI()
 app.state.conn: Connection
+
+require_auth = APIRouter(dependencies=[Depends(JWTBearer())])
 
 
 @app.on_event("startup")
@@ -34,22 +40,26 @@ async def index() -> Response:
     return Response(status_code=302, headers={"Location": "/docs"})
 
 
-@app.get("/domains")
-async def get_domains() -> list[Domain]:
+@require_auth.get("/domains")
+async def get_domains(request: Request) -> list[Domain]:
     """Return all the currently registered domains."""
     domains = []
 
     async with app.state.conn.transaction():
         async for record in app.state.conn.cursor("SELECT (id, name) FROM domains"):
             id_, name = record["row"]
-            domains.append(Domain(id=id_, name=name))
+
+            if check_auth(request, name, do_raise=False):
+                domains.append(Domain(id=id_, name=name))
 
     return domains
 
 
-@app.post("/domains")
-async def create_domain(domain: NewDomain) -> Domain:
+@require_auth.post("/domains")
+async def create_domain(request: Request, domain: NewDomain) -> Domain:
     """Create a new domain."""
+    check_auth(request, domain.name)
+
     async with app.state.conn.transaction():
         # Create the new domain
         try:
@@ -74,9 +84,11 @@ async def create_domain(domain: NewDomain) -> Domain:
     return Domain(id=id_, name=domain.name)
 
 
-@app.delete("/domains/{domain}")
-async def delete_domain(domain: str) -> None:
+@require_auth.delete("/domains/{domain}")
+async def delete_domain(request: Request, domain: str) -> None:
     """Delete a domain."""
+    check_auth(request, domain)
+
     async with app.state.conn.transaction():
         await app.state.conn.execute(
             "DELETE FROM records WHERE domain_id = (SELECT id FROM domains WHERE name = $1)", domain
@@ -87,9 +99,11 @@ async def delete_domain(domain: str) -> None:
             raise HTTPException(status_code=404, detail="Domain not found")
 
 
-@app.get("/records/{domain}")
-async def get_records(domain: str) -> list[Record]:
+@require_auth.get("/records/{domain}")
+async def get_records(request: Request, domain: str) -> list[Record]:
     """Return all the records for a domain."""
+    check_auth(request, domain)
+
     records = []
 
     domain_id = await app.state.conn.fetchval("SELECT id FROM domains WHERE name = $1", domain)
@@ -118,9 +132,11 @@ async def get_records(domain: str) -> list[Record]:
     return records
 
 
-@app.post("/records/{domain}")
-async def create_record(domain: str, record: NewRecord) -> Record:
+@require_auth.post("/records/{domain}")
+async def create_record(request: Request, domain: str, record: NewRecord) -> Record:
     """Create a new record on the selected domain."""
+    check_auth(request, domain)
+
     domain_id = await app.state.conn.fetchval("SELECT id FROM domains WHERE name = $1", domain)
     if not domain_id:
         raise HTTPException(status_code=404, detail="Domain not found")
@@ -175,9 +191,13 @@ async def create_record(domain: str, record: NewRecord) -> Record:
     )
 
 
-@app.patch("/records/{domain}/{record_id}")
-async def update_record(domain: str, record_id: int, update_data: UpdateRecord) -> Record:
+@require_auth.patch("/records/{domain}/{record_id}")
+async def update_record(
+    request: Request, domain: str, record_id: int, update_data: UpdateRecord
+) -> Record:
     """Modify an existing record by ID."""
+    check_auth(request, domain)
+
     domain_id = await app.state.conn.fetchval("SELECT id FROM domains WHERE name = $1", domain)
     if not domain_id:
         raise HTTPException(status_code=404, detail="Domain not found")
@@ -222,9 +242,11 @@ async def update_record(domain: str, record_id: int, update_data: UpdateRecord) 
     )
 
 
-@app.delete("/records/{domain}/{record_id}")
-async def delete_record(domain: str, record_id: int) -> None:
+@require_auth.delete("/records/{domain}/{record_id}")
+async def delete_record(request: Request, domain: str, record_id: int) -> None:
     """Delete a record by ID."""
+    check_auth(request, domain)
+
     domain_id = await app.state.conn.fetchval("SELECT id FROM domains WHERE name = $1", domain)
     if not domain_id:
         raise HTTPException(status_code=404, detail="Domain not found")
@@ -245,3 +267,23 @@ async def delete_record(domain: str, record_id: int) -> None:
 
     async with app.state.conn.transaction():
         await app.state.conn.execute("DELETE FROM records WHERE id = $1", record_id)
+
+
+@require_auth.post("/generate-token")
+async def generate_token(request: Request, token_req: TokenRequest) -> str:
+    """Generate a new JWT for the provided namespace."""
+    if request.state.auth_namespace != "*":
+        raise HTTPException(status_code=403, detail="Require wildcard token")
+
+    return jwt.encode({"n": token_req.namespace}, SECRET_KEY, algorithm="HS256")
+
+
+if SECRET_KEY == "development":
+
+    @app.get("/dev-token")
+    async def dev_token() -> str:
+        """Generate a developer token."""
+        return jwt.encode({"n": "*"}, SECRET_KEY, algorithm="HS256")
+
+
+app.include_router(require_auth)

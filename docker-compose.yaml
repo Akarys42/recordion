@@ -12,6 +12,7 @@ services:
       - "8000:80"
     environment:
       DNS_DATABASE_URL: postgres://powerdns:powerdns@postgres:5432/powerdns
+      SECRET_KEY: development
 
   powerdns:
     depends_on:
