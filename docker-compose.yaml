@@ -1,0 +1,31 @@
+version: "3"
+services:
+  recordion:
+    depends_on:
+      - postgres
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./:/recordion:ro
+    ports:
+      - "8000:80"
+
+  powerdns:
+    depends_on:
+      - postgres
+    build:
+      context: .
+      dockerfile: development-powerdns.Dockerfile
+    ports:
+      - "8053:53/tcp"
+      - "8053:53/udp"
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_PASSWORD: powerdns
+      POSTGRES_USER: powerdns
+      POSTGRES_DB: powerdns
+    volumes:
+      - ./powerdns-schema.sql:/docker-entrypoint-initdb.d/init.sql
