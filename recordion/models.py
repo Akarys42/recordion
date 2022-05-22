@@ -9,7 +9,7 @@ class NewDomain(BaseModel):
     name: str
 
     @validator("name")
-    def validate_name(self, v: str) -> str:
+    def validate_name(cls, v: str) -> str:  # noqa: N805
         """Validate domain name."""
         validate_domain(v)
         return v
@@ -31,7 +31,7 @@ class NewRecord(BaseModel):
     prio: int | None = None
 
     @validator("name")
-    def validate_name(self, v: str) -> str:
+    def validate_name(cls, v: str) -> str:  # noqa: N805
         """Validate record name."""
         validate_domain(v)
         return v

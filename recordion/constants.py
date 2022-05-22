@@ -13,7 +13,9 @@ SOA_TTL = int(os.getenv("SOA_TTL", "3600"))  # Time to live of SOA records
 DEFAULT_TTL = int(os.getenv("DEFAULT_TTL", "300"))  # Default TTL for records
 
 DEFAULT_ALLOWED_RECORDS = ("CNAME", "A", "AAAA", "TXT", "NS", "SRV")
-ALLOWED_RECORDS = os.getenv("ALLOWED_RECORDS", "").split(",") or DEFAULT_ALLOWED_RECORDS
+ALLOWED_RECORDS = os.getenv("ALLOWED_RECORDS", "").split(",")
+if ALLOWED_RECORDS == [""]:
+    ALLOWED_RECORDS = DEFAULT_ALLOWED_RECORDS
 
 DOMAIN_RE = re.compile(
     r"^([a-zA-Z0-9]|[a-zA-Z0-9\-]{0,62}[a-zA-Z0-9])"

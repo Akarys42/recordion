@@ -16,6 +16,7 @@ from recordion.constants import (
     SOA_TTL,
 )
 from recordion.models import Domain, NewDomain, NewRecord, Record, UpdateRecord
+from recordion.utils import bump_serial
 
 app = FastAPI()
 app.state.conn: Connection
@@ -132,7 +133,7 @@ async def create_record(domain: str, record: NewRecord) -> Record:
     if record.type not in ALLOWED_RECORDS:
         raise HTTPException(
             status_code=400,
-            detail=f"Record type is not allowed (must be one of {ALLOWED_RECORDS.join(', ')}",
+            detail=f"Record type is not allowed (must be one of {', '.join(ALLOWED_RECORDS)}).",
         )
 
     # Check that record doesn't already exist
@@ -159,6 +160,8 @@ async def create_record(domain: str, record: NewRecord) -> Record:
             )
         except UniqueViolationError:
             raise HTTPException(status_code=409, detail="Record already exists")
+
+    await bump_serial(domain_id, app.state.conn)
 
     return Record(
         id=id_,
@@ -205,6 +208,8 @@ async def update_record(domain: str, record_id: int, update_data: UpdateRecord) 
             record_id,
         )
 
+    await bump_serial(domain_id, app.state.conn)
+
     return Record(
         id=record_id,
         domain=domain,
@@ -235,6 +240,8 @@ async def delete_record(domain: str, record_id: int) -> None:
     # Check if that record can be deleted
     if record["type"] in LOCKED_RECORD_TYPES:
         raise HTTPException(status_code=400, detail="Record cannot be deleted")
+
+    await bump_serial(domain_id, app.state.conn)
 
     async with app.state.conn.transaction():
         await app.state.conn.execute("DELETE FROM records WHERE id = $1", record_id)
