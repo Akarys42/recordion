@@ -2,7 +2,7 @@
 name = "recordion"
 version = "0.1.0"
 description = "REST API capable of managing DNS records"
-authors = ["Matteo Bertucci <starchild@akarys.me>"]
+authors = ["Amber Bertucci <amber@akarys.me>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
